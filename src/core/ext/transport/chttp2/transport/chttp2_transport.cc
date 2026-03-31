@@ -97,6 +97,7 @@
 #include "src/core/lib/transport/status_conversion.h"
 #include "src/core/lib/transport/transport.h"
 #include "src/core/lib/transport/transport_framing_endpoint_extension.h"
+#include "src/core/mitigation_engine/mitigation_engine.h"
 #include "src/core/telemetry/call_tracer.h"
 #include "src/core/telemetry/context_list_entry.h"
 #include "src/core/telemetry/default_tcp_tracer.h"
@@ -736,7 +737,9 @@ grpc_chttp2_transport::grpc_chttp2_transport(
           channel_args.GetBool(GRPC_ARG_HTTP2_BDP_PROBE).value_or(true),
           &memory_owner),
       deframe_state(is_client ? GRPC_DTS_FH_0 : GRPC_DTS_CLIENT_PREFIX_0),
-      is_client(is_client) {
+      is_client(is_client),
+      mitigation_engine_provider(
+          channel_args.GetObject<grpc_core::MitigationEngineProvider>()) {
   context_list = new grpc_core::ContextList();
 
   if (channel_args.GetBool(GRPC_ARG_TCP_TRACING_ENABLED).value_or(false) &&
@@ -978,6 +981,12 @@ grpc_chttp2_stream::grpc_chttp2_stream(grpc_chttp2_transport* t,
       flow_control(&t->flow_control),
       call_tracer_wrapper(this),
       call_tracer(arena->GetContext<grpc_core::CallTracer>()) {
+  if (t->mitigation_engine_provider != nullptr) {
+    auto engine = t->mitigation_engine_provider->GetEngine();
+    if (engine != nullptr) {
+      arena->SetContext<grpc_core::MitigationEngine>(engine.release());
+    }
+  }
   t->streams_allocated.fetch_add(1, std::memory_order_relaxed);
   if (server_data) {
     id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(server_data));

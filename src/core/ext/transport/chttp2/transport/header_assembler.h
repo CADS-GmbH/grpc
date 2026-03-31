@@ -141,7 +141,8 @@ class HeaderAssembler {
   ValueOrHttp2Status<Arena::PoolPtr<grpc_metadata_batch>> ReadMetadata(
       HPackParser& parser, bool is_initial_metadata,
       const uint32_t max_header_list_size_soft_limit,
-      const uint32_t max_header_list_size_hard_limit) {
+      const uint32_t max_header_list_size_hard_limit,
+      MitigationEngine* mitigation_engine) {
     ASSEMBLER_LOG << "HeaderAssembler::ReadMetadata " << buffer_.Length()
                   << " Bytes.";
 
@@ -174,6 +175,7 @@ class HeaderAssembler {
             /*max_header_list_size_soft_limit=*/max_header_list_size_soft_limit,
             /*max_header_list_size_hard_limit=*/max_header_list_size_hard_limit,
             /*stream_id=*/stream_id_,
+            /*mitigation_engine=*/mitigation_engine,
         });
     Cleanup();
     if (!status.IsOk()) {
@@ -186,7 +188,8 @@ class HeaderAssembler {
   Http2Status ParseAndDiscardHeaders(
       HPackParser& parser, const bool is_initial_metadata,
       const uint32_t max_header_list_size_soft_limit,
-      const uint32_t max_header_list_size_hard_limit) {
+      const uint32_t max_header_list_size_hard_limit,
+      MitigationEngine* mitigation_engine) {
     ASSEMBLER_LOG << "HeaderAssembler::ParseAndDiscardHeaders "
                   << buffer_.Length() << " Bytes"
                   << " is_initial_metadata: " << is_initial_metadata
@@ -204,6 +207,7 @@ class HeaderAssembler {
             /*max_header_list_size_soft_limit=*/max_header_list_size_soft_limit,
             /*max_header_list_size_hard_limit=*/max_header_list_size_hard_limit,
             /*stream_id=*/stream_id_,
+            /*mitigation_engine=*/mitigation_engine,
         });
     Cleanup();
     return status;
@@ -244,6 +248,7 @@ class HeaderAssembler {
     uint32_t max_header_list_size_soft_limit;
     uint32_t max_header_list_size_hard_limit;
     uint32_t stream_id;
+    MitigationEngine* mitigation_engine;
 
     std::string DebugString() const {
       return absl::StrCat(
@@ -268,7 +273,8 @@ class HeaderAssembler {
                              args.is_initial_metadata
                                  ? HPackParser::LogInfo::Type::kHeaders
                                  : HPackParser::LogInfo::Type::kTrailers,
-                             args.is_client});
+                             args.is_client},
+        args.mitigation_engine);
     // TODO(tjagtap) [PH2][P5] Bug fix : Check if the received metadata honours
     // allow_true_binary_metadata or not. Will need changes to HPack code.
     absl::Status stream_error = absl::OkStatus();

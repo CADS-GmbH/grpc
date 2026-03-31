@@ -98,7 +98,8 @@ class IncomingMetadataTracker {
   Http2Status ParseAndDiscardHeaders(
       SliceBuffer&& buffer, const bool is_end_headers, Stream* stream,
       Http2Status&& original_status,
-      const uint32_t max_header_list_size_hard_limit) {
+      const uint32_t max_header_list_size_hard_limit,
+      MitigationEngine* mitigation_engine) {
     const HeaderAssembler::ParseHeaderArgs args = {
         /*is_initial_metadata=*/!incoming_header_end_stream_,
         /*is_end_headers=*/is_end_headers,
@@ -107,6 +108,7 @@ class IncomingMetadataTracker {
         max_header_list_size_soft_limit_,
         /*max_header_list_size_hard_limit=*/max_header_list_size_hard_limit,
         /*stream_id=*/incoming_header_stream_id_,
+        /*mitigation_engine=*/mitigation_engine,
     };
     GRPC_HTTP2_COMMON_DLOG << "ParseAndDiscardHeaders buffer "
                               "size: "
@@ -120,7 +122,7 @@ class IncomingMetadataTracker {
       Http2Status result = stream->GetHeaderAssembler().ParseAndDiscardHeaders(
           parser_, args.is_initial_metadata,
           args.max_header_list_size_soft_limit,
-          args.max_header_list_size_hard_limit);
+          args.max_header_list_size_hard_limit, args.mitigation_engine);
       if (!result.IsOk()) {
         GRPC_DCHECK(result.GetType() ==
                     Http2Status::Http2ErrorType::kConnectionError);

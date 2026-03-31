@@ -69,6 +69,7 @@
 #include "src/core/lib/transport/connectivity_state.h"
 #include "src/core/lib/transport/promise_endpoint.h"
 #include "src/core/lib/transport/transport.h"
+#include "src/core/mitigation_engine/mitigation_engine.h"
 #include "src/core/util/debug_location.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/orphanable.h"
@@ -746,6 +747,8 @@ class Http2ServerTransport final : public ServerTransport,
   Waker periodic_updates_waker_;
 
   Http2ReadContext reader_state_;
+
+  MitigationEngineProvider* mitigation_engine_provider_ = nullptr;
 };
 
 // TODO(tjagtap) : [PH2][P1] : Handle the case where a Server receives two

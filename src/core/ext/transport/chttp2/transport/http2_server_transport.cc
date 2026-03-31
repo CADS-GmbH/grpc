@@ -82,6 +82,7 @@
 #include "src/core/lib/transport/connectivity_state.h"
 #include "src/core/lib/transport/promise_endpoint.h"
 #include "src/core/lib/transport/transport.h"
+#include "src/core/mitigation_engine/mitigation_engine.h"
 #include "src/core/util/debug_location.h"
 #include "src/core/util/grpc_check.h"
 #include "src/core/util/latent_see.h"
@@ -391,7 +392,8 @@ Http2Status Http2ServerTransport::ProcessIncomingMetadata(T&& frame) {
     return incoming_headers_.ParseAndDiscardHeaders(
         std::move(frame.payload), frame.end_headers,
         /*stream=*/nullptr, Http2Status::Ok(),
-        settings_->acked().max_header_list_size());
+        settings_->acked().max_header_list_size(),
+        /*mitigation_engine=*/nullptr);
   }
 
   Http2Status validation_status =
@@ -407,7 +409,8 @@ Http2Status Http2ServerTransport::ProcessIncomingMetadata(T&& frame) {
     // status. We need to process it to keep our in consistent state.
     return incoming_headers_.ParseAndDiscardHeaders(
         std::move(frame.payload), frame.end_headers, stream.get(),
-        std::move(append_result), settings_->acked().max_header_list_size());
+        std::move(append_result), settings_->acked().max_header_list_size(),
+        stream->GetCallInitiator().arena()->GetContext<MitigationEngine>());
   }
 
   Http2Status status = ProcessMetadata(stream);
@@ -416,7 +419,8 @@ Http2Status Http2ServerTransport::ProcessIncomingMetadata(T&& frame) {
     // ParseAndDiscardHeaders with an empty buffer.
     return incoming_headers_.ParseAndDiscardHeaders(
         SliceBuffer(), frame.end_headers, stream.get(), std::move(status),
-        settings_->acked().max_header_list_size());
+        settings_->acked().max_header_list_size(),
+        stream->GetCallInitiator().arena()->GetContext<MitigationEngine>());
   }
 
   // Frame payload has either been processed or moved to the HeaderAssembler.
@@ -701,13 +705,15 @@ Http2Status Http2ServerTransport::ProcessMetadata(
 
   GRPC_HTTP2_SERVER_DLOG << "Http2ServerTransport::ProcessMetadata";
   if (assembler.IsReady()) {
+    MitigationEngine* mitigation_engine =
+        stream->GetCallInitiator().arena()->GetContext<MitigationEngine>();
     ValueOrHttp2Status<ServerMetadataHandle> read_result =
-        assembler.ReadMetadata(incoming_headers_.parser(),
-                               !incoming_headers_.HeaderHasEndStream(),
-                               /*max_header_list_size_soft_limit=*/
-                               incoming_headers_.soft_limit(),
-                               /*max_header_list_size_hard_limit=*/
-                               settings_->acked().max_header_list_size());
+        assembler.ReadMetadata(
+            incoming_headers_.parser(), !incoming_headers_.HeaderHasEndStream(),
+            /*max_header_list_size_soft_limit=*/
+            incoming_headers_.soft_limit(),
+            /*max_header_list_size_hard_limit=*/
+            settings_->acked().max_header_list_size(), mitigation_engine);
     if (read_result.IsOk()) {
       // ServerMetadataHandle metadata = TakeValue(std::move(read_result));
       // if (incoming_headers_.HeaderHasEndStream()) {
@@ -1380,6 +1386,12 @@ absl::Status Http2ServerTransport::IncomingStream(
   // SimpleArenaAllocator vs CallArenaAllocator here.
   RefCountedPtr<Arena> arena = SimpleArenaAllocator(0)->MakeArena();
   arena->SetContext<EventEngine>(event_engine_.get());
+  if (mitigation_engine_provider_ != nullptr) {
+    auto engine = mitigation_engine_provider_->GetEngine();
+    if (engine != nullptr) {
+      arena->SetContext<MitigationEngine>(engine.release());
+    }
+  }
   CallInitiatorAndHandler call =
       MakeCallPair(std::move(metadata), std::move(arena));
 
@@ -1999,7 +2011,9 @@ Http2ServerTransport::Http2ServerTransport(
           "PH2_Server",
           channel_args.GetBool(GRPC_ARG_HTTP2_BDP_PROBE).value_or(true),
           &memory_owner_),
-      ztrace_collector_(std::make_shared<PromiseHttp2ZTraceCollector>()) {
+      ztrace_collector_(std::make_shared<PromiseHttp2ZTraceCollector>()),
+      mitigation_engine_provider_(
+          channel_args.GetObject<MitigationEngineProvider>()) {
   GRPC_HTTP2_SERVER_DLOG << "Http2ServerTransport Constructor Begin";
   SourceConstructed();
 
