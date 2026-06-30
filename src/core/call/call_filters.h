@@ -1631,6 +1631,12 @@ constexpr bool AnyMethodHasChannelAccess = (MethodHasChannelAccess<Ts> || ...);
 // fall into this category: later code should use this.
 template <typename Derived>
 inline constexpr bool CallHasChannelAccess() {
+  [[maybe_unused]] constexpr auto a = &Derived::Call::OnClientInitialMetadata;
+  [[maybe_unused]] constexpr auto b = &Derived::Call::OnClientToServerMessage;
+  [[maybe_unused]] constexpr auto c = &Derived::Call::OnServerInitialMetadata;
+  [[maybe_unused]] constexpr auto d = &Derived::Call::OnServerToClientMessage;
+  [[maybe_unused]] constexpr auto e = &Derived::Call::OnServerTrailingMetadata;
+  [[maybe_unused]] constexpr auto f = &Derived::Call::OnFinalize;
   return AnyMethodHasChannelAccess<
       decltype(&Derived::Call::OnClientInitialMetadata),
       decltype(&Derived::Call::OnClientToServerMessage),
